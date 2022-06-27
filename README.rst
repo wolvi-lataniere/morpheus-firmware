@@ -18,20 +18,20 @@ To debug this project, set the OpenOCD server IP address to
 Project status
 **************
 
-* |check| Blink a LED
-* |uncheck| Communicate with UART
-* |uncheck| Integrate debugging with VSCode
-* |uncheck| Build the firmware structure
-* |uncheck| Define protocol
+* [X] Blink a LED
+* [ ] Communicate with UART
+* [ ] Integrate debugging with VSCode
+* [ ] Build the firmware structure
+* [ ] Define protocol
 * **Implementation**
   
- * |uncheck| Interrupt based UART
- * |uncheck| Protocol handling class
- * |uncheck| Power management class
- * |uncheck| *Morpheus* service
+ * [ ] Interrupt based UART
+ * [ ] Protocol handling class
+ * [ ] Power management class
+ * [ ] *Morpheus* service
  
 * **Documentation**
   
- * |uncheck| Document structure
- * |uncheck| Document installation
+ * [ ] Document structure
+ * [ ] Document installation
  

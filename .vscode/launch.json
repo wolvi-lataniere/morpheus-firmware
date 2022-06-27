@@ -16,11 +16,11 @@
             "externalConsole": false,
             "setupCommands": [
                 { "text": "tar extended-remote ${env:OPENOCD_SERVER_ADDRESS}:3333", "description": "connect to target", "ignoreFailures": false},
-                { "text": "mon reset init", "description": "Halts the system", "ignoreFailures": false},
                 { "text": "file ${workspaceRoot}/build/zephyr/zephyr.elf", "description": "Loads the firmware", "ignoreFailures": false},
                 { "text": "load", "description": "Loads the firmware", "ignoreFailures": false},
-                { "text": "tbreak main", "description": "Breaks on main", "ignoreFailures": false}
-            
+                { "text": "tbreak main", "description": "Breaks on main", "ignoreFailures": false},
+                { "text": "mon reset init", "description": "Halts the system", "ignoreFailures": false},
+                
             ]
         }
     ]
