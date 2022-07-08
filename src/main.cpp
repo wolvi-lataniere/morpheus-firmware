@@ -63,16 +63,16 @@ void serial_cb(const struct device *dev, void *user_data)
 	static uint8_t size;
 	// uint32_t dtr;
 
-	if (!uart_irq_update(uart)) {
+	if (!uart_irq_update(dev)) {
 		return;
 	}
 
 	// uart_line_ctrl_get(uart, UART_LINE_CTRL_DTR, &dtr);
 	// if (!dtr) return;
 
-	while (uart_irq_rx_ready(uart)) {
+	while (uart_irq_rx_ready(dev)) {
 
-		uart_fifo_read(uart, &c, 1);
+		uart_fifo_read(dev, &c, 1);
 
 		switch (state)
 		{
@@ -121,11 +121,13 @@ void serial_cb(const struct device *dev, void *user_data)
 	}
 
 
-	if (uart_irq_tx_ready(uart)) {
+	if (uart_irq_tx_ready(dev)) {
 		if (k_msgq_get(&uart_sendmsgq, &tx_int_buf, K_NO_WAIT) == 0)
-		   uart_fifo_fill(uart, tx_int_buf, tx_int_buf[2]);
+		{
+			uart_fifo_fill(dev, tx_int_buf, tx_int_buf[2]);
+		}
 		else
-		   uart_irq_tx_disable(uart);   
+		   uart_irq_tx_disable(dev);   
 	}
 }
 
@@ -143,6 +145,13 @@ void send_frame(const uint8_t* buffer, uint8_t len) {
 		send_buffer[3+i] = buffer[i];
 	}
 	send_buffer[3+len] = csum;
+
+	uint32_t dtr;
+	uart_line_ctrl_get(uart, UART_LINE_CTRL_DTR, &dtr);
+	if (!dtr) return;
+
+
+	gpio_pin_toggle_dt(&led);
 
 	k_msgq_put(&uart_sendmsgq, &send_buffer, K_NO_WAIT);
 	uart_irq_tx_enable(uart);
@@ -213,9 +222,5 @@ int main(void)
 
 		k_free(params);
 
-		ret = gpio_pin_toggle_dt(&led);
-		if (ret < 0) {
-			return 0;
-		}
 	}
 }

@@ -8,5 +8,7 @@
 	cdc_acm_uart0 {
 		compatible = "zephyr,cdc-acm-uart";
 		label = "CDC_ACM_0";
+		parity = "none";
+		current-speed = <115200>;
 	};
 };
