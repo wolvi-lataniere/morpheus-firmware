@@ -25,7 +25,7 @@
 /* The devicetree node identifier for the "led0" alias. */
 #define LED0_NODE DT_ALIAS(led0)
 
-
+#define MORPHEUS_USER_NODE DT_PATH(zephyr_user)
 
 /*
  * A build error on this line means your board is unsupported.
@@ -33,6 +33,8 @@
  */
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 static const struct device *uart = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
+static const struct gpio_dt_spec relay = GPIO_DT_SPEC_GET(MORPHEUS_USER_NODE, poweron_gpios); 
+
 
 typedef enum __morpheus_frame_decoding_state_machine_state{
   MFDSS_IDLE,
@@ -186,6 +188,12 @@ int main(void)
 		return 0;
 	}
 
+	ret = gpio_pin_configure_dt(&relay, GPIO_OUTPUT_ACTIVE);
+	if (ret < 0) {
+		return 0;
+	}
+	gpio_pin_set_dt(&relay, 1);
+
 	while (k_msgq_get(&uart_msgq, &tx_buf, K_FOREVER) == 0) {
 		
 		void* params;
@@ -207,6 +215,17 @@ int main(void)
 				s_fb_getversion_params version{.major = 0, .minor = 1, .patch = 0};
 				ret = build_feedback_getversion_frame(tx_buf, &size, &version);
 				send_frame((const uint8_t*)tx_buf, size);
+				break;
+			}
+		case INST_SLEEPPIN:
+			{
+            	uint16_t delay = ((s_inst_sleeppin_params*) params)->pre_sleep_time;
+				s_fb_sleeppin_params fb {.success = true};
+				ret = build_feedback_sleeppin_frame(tx_buf, &size, &fb);
+				send_frame((const uint8_t*)tx_buf, size);
+
+				k_sleep(Z_TIMEOUT_MS(1000*delay));
+				gpio_pin_set_dt(&relay, 0);
 				break;
 			}
 		

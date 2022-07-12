@@ -21,6 +21,22 @@ codes:
         - name: patch
           data_type: u8
           description: Patch version number
+  0x03:
+    name: SleepPin
+    instruction:
+      description: |
+        Sleeps while WAKE-UP GPIO pin is up.
+      parameters:
+        - name: pre_sleep_time
+          description: Pre sleep-delay in seconds
+          data_type: u16
+    feedback:
+      description: |
+        Command execution status.
+      parameters:
+        - name: success
+          description: Success status
+          data_type: bool
   0x04:
     name: SleepTime
     instruction:

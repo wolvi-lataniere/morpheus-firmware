@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <zephyr/dt-bindings/gpio/gpio.h>
 
 &zephyr_udc0 {
 	cdc_acm_uart0 {
@@ -10,5 +11,11 @@
 		label = "CDC_ACM_0";
 		parity = "none";
 		current-speed = <115200>;
+	};
+};
+
+/ { 
+	zephyr,user {
+    	poweron-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
 	};
 };
