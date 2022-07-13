@@ -6,4 +6,4 @@ find_package(Zephyr)
 project(morpheus_app)
 
 
-target_sources(app PRIVATE src/main.cpp src/generated.cpp)
+target_sources(app PRIVATE src/main.cpp src/generated.cpp src/protocol.cpp)

@@ -17,10 +17,10 @@
 #include <zephyr/usb/usb_device.h>
 #include <string.h>
 #include "generated.h"
+#include "protocol.h"
 
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME_MS   1000
-#define MSG_SIZE 255
 
 /* The devicetree node identifier for the "led0" alias. */
 #define LED0_NODE DT_ALIAS(led0)
@@ -36,133 +36,10 @@ static const struct device *uart = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 static const struct gpio_dt_spec relay = GPIO_DT_SPEC_GET(MORPHEUS_USER_NODE, poweron_gpios); 
 
 
-typedef enum __morpheus_frame_decoding_state_machine_state{
-  MFDSS_IDLE,
-  MFDSS_HEADER2,
-  MFDSS_HEADER_OK,
-  MFDSS_READING,
-  MFDSS_WAIT_CSUM
-} MFDS_STATE;
-
-/* queue to store up to 3 messages (aligned to 4-byte boundary) */
-K_MSGQ_DEFINE(uart_msgq, MSG_SIZE, 3, 1);
-K_MSGQ_DEFINE(uart_sendmsgq, MSG_SIZE, 3, 1);
-
-/* receive buffer used in UART ISR callback */
-static uint8_t rx_buf[MSG_SIZE];
-static int rx_buf_pos;
-static uint8_t tx_int_buf[MSG_SIZE];
-
-/*
- * Read characters from UART until line end is detected. Afterwards push the
- * data to the message queue.
- */
-void serial_cb(const struct device *dev, void *user_data)
-{
-	uint8_t c;
-	static MFDS_STATE state = MFDSS_IDLE;
-	static uint8_t csum;
-	static uint8_t size;
-	// uint32_t dtr;
-
-	if (!uart_irq_update(dev)) {
-		return;
-	}
-
-	// uart_line_ctrl_get(uart, UART_LINE_CTRL_DTR, &dtr);
-	// if (!dtr) return;
-
-	while (uart_irq_rx_ready(dev)) {
-
-		uart_fifo_read(dev, &c, 1);
-
-		switch (state)
-		{
-		case MFDSS_IDLE:
-			if (c == 0x55) {
-				state = MFDSS_HEADER2;
-			}
-			break;
-		
-		case MFDSS_HEADER2:
-			if (c == 0xAA) {
-				state = MFDSS_HEADER_OK;
-				csum = 0;
-				rx_buf_pos = 0;
-			}
-			else if (c != 0x55) {
-				state = MFDSS_IDLE;
-			}
-			break;
-
-		case MFDSS_HEADER_OK:
-		    state = MFDSS_READING;
-			size = c;
-		    rx_buf[rx_buf_pos++] = c;
-			csum = c;
-			break;
-		
-		case MFDSS_READING:
-		    rx_buf[rx_buf_pos++] = c;
-			csum += c;
-			if ((rx_buf_pos + 3) >= size) {
-				state = MFDSS_WAIT_CSUM;
-			}
-			break;
-
-		case MFDSS_WAIT_CSUM:
-		    if (csum == c) 
-                k_msgq_put(&uart_msgq, &rx_buf, K_NO_WAIT);
-				
-			state = MFDSS_IDLE;
-			break;
-
-		default:
-			break;
-		}
-	}
-
-
-	if (uart_irq_tx_ready(dev)) {
-		if (k_msgq_get(&uart_sendmsgq, &tx_int_buf, K_NO_WAIT) == 0)
-		{
-			uart_fifo_fill(dev, tx_int_buf, tx_int_buf[2]);
-		}
-		else
-		   uart_irq_tx_disable(dev);   
-	}
-}
-
-
-void send_frame(const uint8_t* buffer, uint8_t len) {
-	static uint8_t send_buffer[256];
-	send_buffer[0] = 0x55;
-	send_buffer[1] = 0xAA;
-	send_buffer[2] = len+4;
-	uint8_t csum = len+4;
-	int i;
-
-	for (i=0; i<len; i++) {
-		csum += buffer[i];
-		send_buffer[3+i] = buffer[i];
-	}
-	send_buffer[3+len] = csum;
-
-	uint32_t dtr;
-	uart_line_ctrl_get(uart, UART_LINE_CTRL_DTR, &dtr);
-	if (!dtr) return;
-
-
-	gpio_pin_toggle_dt(&led);
-
-	k_msgq_put(&uart_sendmsgq, &send_buffer, K_NO_WAIT);
-	uart_irq_tx_enable(uart);
-}
-
 int main(void)
 {
 	int ret;
-	char tx_buf[MSG_SIZE];
+	char tx_buf[MORPHEUS_FRAME_SIZE];
 
 	if (!device_is_ready(led.port)) {
 		return 0;
@@ -173,15 +50,8 @@ int main(void)
 		return 0;
 	}
 	
-
-	if (!device_is_ready(uart)) {
-		printk("UART device not found!");
+	if (!morpheus_protocol_init(uart))
 		return 0;
-	}
-
-	/* configure interrupt and callback to receive data */
-	uart_irq_callback_user_data_set(uart, serial_cb, NULL);
-	uart_irq_rx_enable(uart);
 
 	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
 	if (ret < 0) {
@@ -194,7 +64,7 @@ int main(void)
 	}
 	gpio_pin_set_dt(&relay, 1);
 
-	while (k_msgq_get(&uart_msgq, &tx_buf, K_FOREVER) == 0) {
+	while ( morpheus_protocol_get_frame(tx_buf)== 0) {
 		
 		void* params;
 		Instructions inst = INST_SLEEPTIME;
@@ -204,7 +74,7 @@ int main(void)
 		{
 			s_fb_getversion_params version{.major = 0, .minor = 1, .patch = 99};
 			ret = build_feedback_getversion_frame(tx_buf, &size, &version);
-			send_frame((const uint8_t*)tx_buf, size);
+			morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
 			continue;
 		}
 		
@@ -214,7 +84,7 @@ int main(void)
 			{
 				s_fb_getversion_params version{.major = 0, .minor = 1, .patch = 0};
 				ret = build_feedback_getversion_frame(tx_buf, &size, &version);
-				send_frame((const uint8_t*)tx_buf, size);
+				morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
 				break;
 			}
 		case INST_SLEEPPIN:
@@ -222,7 +92,7 @@ int main(void)
             	uint16_t delay = ((s_inst_sleeppin_params*) params)->pre_sleep_time;
 				s_fb_sleeppin_params fb {.success = true};
 				ret = build_feedback_sleeppin_frame(tx_buf, &size, &fb);
-				send_frame((const uint8_t*)tx_buf, size);
+				morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
 
 				k_sleep(Z_TIMEOUT_MS(1000*delay));
 				gpio_pin_set_dt(&relay, 0);
@@ -233,13 +103,14 @@ int main(void)
 			{
 				s_fb_getversion_params version{.major = 0, .minor = 1, .patch = 98};
 				ret = build_feedback_getversion_frame(tx_buf, &size, &version);
-				send_frame((const uint8_t*)tx_buf, size);
+				morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
 				break;
 			}
 			break;
 		}
 
 		k_free(params);
+		gpio_pin_toggle_dt(&led);
 
 	}
 }
