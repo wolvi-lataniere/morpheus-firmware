@@ -18,6 +18,7 @@
 #include <string.h>
 #include "generated.h"
 #include "protocol.h"
+#include "morpheus-states.h"
 
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME_MS   1000
@@ -33,7 +34,6 @@
  */
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 static const struct device *uart = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
-static const struct gpio_dt_spec relay = GPIO_DT_SPEC_GET(MORPHEUS_USER_NODE, poweron_gpios); 
 
 
 int main(void)
@@ -58,11 +58,7 @@ int main(void)
 		return 0;
 	}
 
-	ret = gpio_pin_configure_dt(&relay, GPIO_OUTPUT_ACTIVE);
-	if (ret < 0) {
-		return 0;
-	}
-	gpio_pin_set_dt(&relay, 1);
+	morpheus_state_init();
 
 	while ( morpheus_protocol_get_frame(tx_buf)== 0) {
 		
@@ -87,15 +83,28 @@ int main(void)
 				morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
 				break;
 			}
+
 		case INST_SLEEPPIN:
 			{
             	uint16_t delay = ((s_inst_sleeppin_params*) params)->pre_sleep_time;
+				bool wake_state = ((s_inst_sleeppin_params*) params)->wake_pin_active_state;
 				s_fb_sleeppin_params fb {.success = true};
 				ret = build_feedback_sleeppin_frame(tx_buf, &size, &fb);
 				morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
 
-				k_sleep(Z_TIMEOUT_MS(1000*delay));
-				gpio_pin_set_dt(&relay, 0);
+				morpheus_sleep_pin(delay, wake_state);
+				break;
+			}
+
+		case INST_SLEEPTIME:
+			{
+            	uint16_t delay = ((s_inst_sleeptime_params*) params)->pre_sleep_time;
+				uint32_t sleep_time = ((s_inst_sleeptime_params*) params)->duration;
+				s_fb_sleeptime_params fb {.feedback = 1};
+				ret = build_feedback_sleeptime_frame(tx_buf, &size, &fb);
+				morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
+
+				morpheus_sleep_time(delay, sleep_time);
 				break;
 			}
 		

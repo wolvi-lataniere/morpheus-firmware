@@ -29,10 +29,12 @@ struct s_inst_getversion_params {
 
 struct s_inst_sleeppin_params {
     uint16_t pre_sleep_time;
+	bool wake_pin_active_state;
 };
 
 struct s_inst_sleeptime_params {
-    uint32_t duration;
+    uint16_t pre_sleep_time;
+	uint32_t duration;
 };
 
 struct s_fb_getversion_params {

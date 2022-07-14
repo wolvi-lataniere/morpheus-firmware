@@ -100,6 +100,10 @@ int build_instruction_sleeppin_frame(char* buffer, int *len, struct s_inst_sleep
     }
     else return -1;
     
+
+    if (position < *len) buffer[position++] = (uint8_t) parameters->wake_pin_active_state;
+    else return -1;
+    
     *len = position;
 
     return 0;
@@ -115,6 +119,13 @@ int build_instruction_sleeptime_frame(char* buffer, int *len, struct s_inst_slee
     if (position < *len) buffer[position++] = 4;
     else return -1;
         
+    if ((position + 2) < *len) {
+        memcpy(&buffer[position], &parameters->pre_sleep_time, 2);
+        position += 2;
+    }
+    else return -1;
+    
+
     if ((position + 4) < *len) {
         memcpy(&buffer[position], &parameters->duration, 4);
         position += 4;
@@ -170,7 +181,7 @@ int parse_feedback_sleeppin_frame(char* buffer, int len, struct s_fb_sleeppin_pa
     // Check the code
     if (buffer[position++] != 3) return -1;
         
-    if (position < len) parameters->success = (bool) buffer[position++] ;
+    if (position < len) parameters->success = (buffer[position++] != 0) ;
     else return -1;
     
     return 0;
@@ -236,6 +247,10 @@ int parse_instruction_sleeppin_frame(char* buffer, int len, struct s_inst_sleepp
     }
     else return -1;
     
+
+    if (position < len) parameters->wake_pin_active_state = (buffer[position++] != 0);
+    else return -1;
+    
     return 0;
 }
         
@@ -254,6 +269,13 @@ int parse_instruction_sleeptime_frame(char* buffer, int len, struct s_inst_sleep
     // Check the code
     if (buffer[position++] != 4) return -1;
         
+    if ((position + 2) < len) {
+        memcpy(&parameters->pre_sleep_time, &buffer[position], 2);
+        position += 2;
+    }
+    else return -1;
+    
+
     if ((position + 4) < len) {
         memcpy(&parameters->duration, &buffer[position], 4);
         position += 4;

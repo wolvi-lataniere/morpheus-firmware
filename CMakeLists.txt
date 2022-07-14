@@ -5,5 +5,4 @@ set(BOARD rpi_pico)
 find_package(Zephyr)
 project(morpheus_app)
 
-
-target_sources(app PRIVATE src/main.cpp src/generated.cpp src/protocol.cpp)
+target_sources(app PRIVATE src/main.cpp src/generated.cpp src/protocol.cpp src/morpheus-states.cpp)
