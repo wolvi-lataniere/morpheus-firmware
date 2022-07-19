@@ -19,16 +19,16 @@ Project status
 **************
 
 * [X] Blink a LED
-* [ ] Communicate with UART
-* [ ] Integrate debugging with VSCode
-* [ ] Build the firmware structure
-* [ ] Define protocol
+* [X] Communicate with UART
+* [X] Integrate debugging with VSCode
+* [X] Build the firmware structure
+* [X] Define protocol
 * **Implementation**
   
- * [ ] Interrupt based UART
- * [ ] Protocol handling class
- * [ ] Power management class
- * [ ] *Morpheus* service
+ * [X] Interrupt based UART
+ * [X] Protocol handling class
+ * [X] Power management class
+ * [X] *Morpheus* service
  
 * **Documentation**
   
