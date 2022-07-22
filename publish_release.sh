@@ -59,5 +59,4 @@ git tag ${TAG}
 
 git push --tags
 
-gh login
-gh release create ${TAG} --notes ${COMMENT} out/extracted/data/morpheus-serial-${TAG}.uf2
+gh release create ${TAG} --notes "${COMMENT}" out/extracted/data/morpheus-serial-${TAG}.uf2
