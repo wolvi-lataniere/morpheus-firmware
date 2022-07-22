@@ -17,10 +17,9 @@ ENV CMAKE_PREFIX_PATH=/home/user/workdir/zephyr/share/zephyr-package/cmake/
 RUN source /home/user/workdir/zephyr/zephyr-env.sh
 RUN west build
 
-# 6. Chain builds for optimization
-FROM balenalib/%%BALENA_MACHINE_NAME%%-debian:buster-run
+FROM busybox
 
-WORKDIR /usr/src/morpheus
+WORKDIR /data
+COPY --from=builder /home/user/workdir/morpheus/build/zephyr/zephyr.uf2 /data
 
-# 7. Copy the binary
-COPY --from=builder /home/user/workdir/morpheus/build/zephyr/zephyr.uf2 ./
+CMD ["sh"]
