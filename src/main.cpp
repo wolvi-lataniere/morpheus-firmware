@@ -78,7 +78,7 @@ int main(void)
 		{
 		case INST_GETVERSION:
 			{
-				s_fb_getversion_params version{.major = 0, .minor = 1, .patch = 0};
+				s_fb_getversion_params version{.major = 0, .minor = 1, .patch = 1};
 				ret = build_feedback_getversion_frame(tx_buf, &size, &version);
 				morpheus_protocol_send_frame((const uint8_t*)tx_buf, size);
 				break;

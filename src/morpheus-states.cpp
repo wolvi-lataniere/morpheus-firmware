@@ -29,6 +29,9 @@ enum MorpheusCommands {
 /* Forward declaration of state table */
 K_MSGQ_DEFINE(morpheus_cmdq, sizeof(MorpheusCommands), 2, 1);
 
+/* Defines a timer for timed action */
+K_TIMER_DEFINE(morpheus_timer, NULL, NULL);
+
 /* Morpheus state object */
 struct morpheus_s_object {
         /* This must be first */
@@ -36,7 +39,6 @@ struct morpheus_s_object {
 
         /* Other state specific data add here */
         uint16_t pre_delay;
-        int64_t delay_start_time;
         bool wait_pin_state;
         uint32_t sleep_time;
 } ms_obj;
@@ -106,12 +108,12 @@ static void msms_poweron_exit(void* obj)
  */
 static void msms_pre_sleep_pin_entry(void* obj)
 {
-    ms_obj.delay_start_time = k_uptime_get();
+    k_timer_start(&morpheus_timer, K_SECONDS(ms_obj.pre_delay), K_NO_WAIT);
 }
 
 static void msms_pre_sleep_pin_run(void* obj)
 {
-    if ((k_uptime_get() - ms_obj.delay_start_time ) >= (ms_obj.pre_delay * 1000))
+    if (k_timer_status_get(&morpheus_timer) > 0)
     {
         smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_SLEEP_PIN]);
     }
@@ -138,13 +140,12 @@ static void msms_sleep_pin_run(void* obj)
  */
 static void msms_pre_sleep_time_entry(void* obj)
 {
-    ms_obj.delay_start_time = k_uptime_get();
+    k_timer_start(&morpheus_timer, K_SECONDS(ms_obj.pre_delay), K_NO_WAIT);
 }
 
 static void msms_pre_sleep_time_run(void* obj)
 {
-    int64_t current_time = k_uptime_get();
-    if ((current_time - ms_obj.delay_start_time ) >= (ms_obj.pre_delay * 1000))
+    if (k_timer_status_get(&morpheus_timer) > 0)
     {
         smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_SLEEP_TIME]);
     }
@@ -156,13 +157,12 @@ static void msms_pre_sleep_time_run(void* obj)
 static void msms_sleep_time_entry(void* obj)
 {
     gpio_pin_set_dt(&relay, 0);
-    ms_obj.delay_start_time = k_uptime_get();
+    k_timer_start(&morpheus_timer, K_SECONDS(ms_obj.sleep_time), K_NO_WAIT);
 }
 
 static void msms_sleep_time_run(void* obj)
 {
-    int64_t current_time = k_uptime_get();
-    if ((current_time - ms_obj.delay_start_time ) >= (ms_obj.sleep_time * 1000))
+    if (k_timer_status_get(&morpheus_timer) > 0)
     {
         smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_POWERON]);
     }
