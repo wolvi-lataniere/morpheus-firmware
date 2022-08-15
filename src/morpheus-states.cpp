@@ -1,7 +1,6 @@
 
 #include <zephyr/zephyr.h>
 #include <zephyr/device.h>
-#include <zephyr/smf.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include "morpheus-states.h"
@@ -15,15 +14,7 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 static const struct gpio_dt_spec relay = GPIO_DT_SPEC_GET(MORPHEUS_USER_NODE, poweron_gpios); 
 static const struct gpio_dt_spec wakepin = GPIO_DT_SPEC_GET(MORPHEUS_USER_NODE, wakepin_gpios);
 
-/// State machine definitions
-enum MorpheusSMStates {
-    MSMS_POWERON,
-    MSMS_PRE_SLEEP_PIN,
-    MSMS_SLEEP_PIN,
-    MSMS_PRE_SLEEP_TIME,
-    MSMS_SLEEP_TIME
-};
-
+/* Commands definition for the command queue */
 enum MorpheusCommands {
     MSMC_NONE,
     MSMC_SLEEP_PIN,
@@ -33,161 +24,109 @@ enum MorpheusCommands {
 /* Forward declaration of state table */
 K_MSGQ_DEFINE(morpheus_cmdq, sizeof(MorpheusCommands), 2, 1);
 
-/* Defines a timer for timed action */
-K_TIMER_DEFINE(morpheus_timer, NULL, NULL);
 
 /* Morpheus state object */
 struct morpheus_s_object {
-        /* This must be first */
-        struct smf_ctx ctx;
-
         /* Other state specific data add here */
         uint16_t pre_delay;
         bool wait_pin_state;
         uint32_t sleep_time;
 } ms_obj;
 
-static void msms_poweron_entry(void* obj);
-static void msms_poweron_run(void* obj);
-static void msms_poweron_exit(void* obj);
-static void msms_pre_sleep_pin_entry(void* obj);
-static void msms_pre_sleep_pin_run(void* obj);
-static void msms_sleep_pin_entry(void* obj);
-static void msms_sleep_pin_run(void* obj);
-static void msms_pre_sleep_time_entry(void* obj);
-static void msms_pre_sleep_time_run(void* obj);
-static void msms_sleep_time_entry(void* obj);
-static void msms_sleep_time_run(void* obj);
-
-/** Populate the states table **/
-static const struct smf_state morpheus_states[] {
-    [MSMS_POWERON] = SMF_CREATE_STATE(msms_poweron_entry, msms_poweron_run, msms_poweron_exit),
-    [MSMS_PRE_SLEEP_PIN] = SMF_CREATE_STATE(msms_pre_sleep_pin_entry, msms_pre_sleep_pin_run, NULL),
-    [MSMS_SLEEP_PIN] = SMF_CREATE_STATE(msms_sleep_pin_entry, msms_sleep_pin_run, NULL),
-    [MSMS_PRE_SLEEP_TIME] = SMF_CREATE_STATE(msms_pre_sleep_time_entry, msms_pre_sleep_time_run, NULL),
-    [MSMS_SLEEP_TIME] = SMF_CREATE_STATE(msms_sleep_time_entry, msms_sleep_time_run, NULL),
-};
-/*
- * Power ON state
+/**
+ * @brief Handle the SleepPin instruction routine
+ * 
+ * This function puts executes the SleepPin procedure:
+ *   - Wait for PRE_DELAY seconds,
+ *   - Cut the Pi power,
+ *   - Wait for the GPIO input pin to reach WAIT_PIN_STATE level,
+ *   - Wake up the Raspberry Pi,
+ * 
+ * NOTE: This function is blocking and should be executed in a separate thread.
+ * 
+ * @param pre_delay Duration (in seconds) to wait before cutting power
+ * @param wait_pin_state Wake-up pin active state (true for high)
  */
-static void msms_poweron_entry(void* obj)
+static void __morpheus_sleep_pin_routine(uint16_t pre_delay, bool wait_pin_state)
 {
-   gpio_pin_set_dt(&relay, 1);
-   gpio_pin_set_dt(&led, 1);
-//    usb_enable(NULL);
-}
-
-static void msms_poweron_run(void* obj)
-{
-   MorpheusCommands cmd = MSMC_NONE;
-
-   if (k_msgq_get(&morpheus_cmdq, &cmd, K_MSEC(1)) == 0)
-   {
-    switch (cmd) 
-    {
-    case MSMC_NONE:
-        break;
-
-    case MSMC_SLEEP_PIN:
-        smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_PRE_SLEEP_PIN]);
-        break;
-
-    case MSMC_SLEEP_TIME:
-        smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_PRE_SLEEP_TIME]);
-        break;
+    // Wait for the pre-sleep delay
+    k_sleep(K_SECONDS(pre_delay));
     
-    default:
-        break;
-    }
-   }    
-}
-
-static void msms_poweron_exit(void* obj)
-{
-
-}
-
-/*
- * Pre SleepPin state
- */
-static void msms_pre_sleep_pin_entry(void* obj)
-{
-    k_timer_start(&morpheus_timer, K_SECONDS(ms_obj.pre_delay), K_NO_WAIT);
-}
-
-static void msms_pre_sleep_pin_run(void* obj)
-{
-    if (k_timer_status_get(&morpheus_timer) > 0)
-    {
-        smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_SLEEP_PIN]);
-    }
-}
-
-/*
- * SleepPin state
- */
-static void msms_sleep_pin_entry(void* obj)
-{
+    // Cut the power
     gpio_pin_set_dt(&relay, 0);
     gpio_pin_set_dt(&led, 0);
-    // usb_disable();
-}
 
-static void msms_sleep_pin_run(void* obj)
-{
-    if (gpio_pin_get_dt(&wakepin) != ms_obj.wait_pin_state)
+    // Wait for the GPIO to reach desired state
+    while (gpio_pin_get_dt(&wakepin) == wait_pin_state)
     {
-        smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_POWERON]);
+        k_sleep(K_MSEC(100));
     }
+
+    // Restore the power
+    gpio_pin_set_dt(&relay, 1);
+    gpio_pin_set_dt(&led, 1);
 }
 
-/*
- * Pre SleepTime state
+/**
+ * @brief Handle the SleepTime instruction routine
+ * 
+ * This function puts executes the SleepTime procedure:
+ *   - Wait for PRE_DELAY seconds,
+ *   - Cut the Pi power,
+ *   - Wait for SLEEP_TIME seconds,
+ *   - Wake up the Raspberry Pi,
+ * 
+ * NOTE: This function is blocking and should be executed in a separate thread.
+ * 
+ * @param pre_delay Duration (in seconds) to wait before cutting power
+ * @param sleep_time Duration (in seconds) to wait before restoring power
  */
-static void msms_pre_sleep_time_entry(void* obj)
+static void __morpheus_sleep_time_routine(uint16_t pre_delay, uint32_t sleep_time)
 {
-    k_timer_start(&morpheus_timer, K_SECONDS(ms_obj.pre_delay), K_NO_WAIT);
-}
-
-static void msms_pre_sleep_time_run(void* obj)
-{
-    if (k_timer_status_get(&morpheus_timer) > 0)
-    {
-        smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_SLEEP_TIME]);
-    }
-}
-
-/*
- * SleepTime state
- */
-static void msms_sleep_time_entry(void* obj)
-{
+    // Wait for the pre-sleep delay
+    k_sleep(K_SECONDS(pre_delay));
+    
+    // Cut the power
     gpio_pin_set_dt(&relay, 0);
     gpio_pin_set_dt(&led, 0);
-    // usb_disable();
-    k_timer_start(&morpheus_timer, K_SECONDS(ms_obj.sleep_time), K_NO_WAIT);
+
+    // Wait for the sleep-time delay
+    k_sleep(K_SECONDS(sleep_time));
+
+    // Restore the power
+    gpio_pin_set_dt(&relay, 1);
+    gpio_pin_set_dt(&led, 1);
 }
 
-static void msms_sleep_time_run(void* obj)
-{
-    if (k_timer_status_get(&morpheus_timer) > 0)
-    {
-        smf_set_state(SMF_CTX(&ms_obj), &morpheus_states[MSMS_POWERON]);
-    }
-}
-
-
+/**
+ * @brief Main Morpheus loop
+ * 
+ * This function fetches instructions from the command queue and starts the relevant routine.
+ */
 void morpheus_state_thread_entry(void*, void*, void*) {
-    int ret;
-     /* Run the state machine */
+    MorpheusCommands cmd = MSMC_NONE;
+
     while(1) {
-            /* State machine terminates if a non-zero value is returned */
-            ret = smf_run_state(SMF_CTX(&ms_obj));
-            if (ret) {
-                    /* handle return code and terminate state machine */
-                    break;
+        // Poll the commands
+        if (k_msgq_get(&morpheus_cmdq, &cmd, K_SECONDS(1)) == 0)
+        {
+            switch (cmd) 
+            {
+            case MSMC_NONE:
+                break;
+
+            case MSMC_SLEEP_PIN:
+                __morpheus_sleep_pin_routine(ms_obj.pre_delay, ms_obj.wait_pin_state);
+                break;
+
+            case MSMC_SLEEP_TIME:
+                __morpheus_sleep_time_routine(ms_obj.pre_delay, ms_obj.sleep_time);
+                break;
+            
+            default:
+                break;
             }
-            k_msleep(10);
+        } 
     }
 }
 
@@ -202,13 +141,16 @@ void morpheus_state_init()
    gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
    gpio_pin_set_dt(&relay, 1); /// Relay is active by default
    gpio_pin_set_dt(&led, 1); /// Relay is active by default
- 
-    /* Set initial state */
-    smf_set_initial(SMF_CTX(&ms_obj), &morpheus_states[MSMS_POWERON]);
+
+    // Set some default values
+    ms_obj.pre_delay = 90;
+    ms_obj.sleep_time=0;
+    ms_obj.wait_pin_state = false;
+
     k_thread_create(&morpheus_thread_data, morpheus_stack_area,
         K_THREAD_STACK_SIZEOF(morpheus_stack_area),
         morpheus_state_thread_entry, NULL, NULL, NULL,
-        4, 0, K_NO_WAIT);
+        4, 0, K_SECONDS(10));
 }
 
 void morpheus_sleep_pin(uint16_t pre_delay, bool pin_state)
@@ -216,7 +158,7 @@ void morpheus_sleep_pin(uint16_t pre_delay, bool pin_state)
     MorpheusCommands cmd = MSMC_SLEEP_PIN;
     ms_obj.wait_pin_state = pin_state;
     ms_obj.pre_delay = pre_delay;
-    k_msgq_put(&morpheus_cmdq, &cmd, K_NO_WAIT);
+    k_msgq_put(&morpheus_cmdq, &cmd, K_MSEC(100));
 }
 
 void morpheus_sleep_time(uint16_t pre_delay, uint32_t sleep_time)
@@ -224,5 +166,5 @@ void morpheus_sleep_time(uint16_t pre_delay, uint32_t sleep_time)
     MorpheusCommands cmd = MSMC_SLEEP_TIME;
     ms_obj.sleep_time = sleep_time;
     ms_obj.pre_delay = pre_delay;
-    k_msgq_put(&morpheus_cmdq, &cmd, K_NO_WAIT);
+    k_msgq_put(&morpheus_cmdq, &cmd, K_MSEC(100));
 }
