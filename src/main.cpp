@@ -24,15 +24,12 @@
 #define SLEEP_TIME_MS   1000
 
 /* The devicetree node identifier for the "led0" alias. */
-#define LED0_NODE DT_ALIAS(led0)
-
 #define MORPHEUS_USER_NODE DT_PATH(zephyr_user)
 
 /*
  * A build error on this line means your board is unsupported.
  * See the sample documentation for information on how to fix this.
  */
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 static const struct device *uart = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 
 
@@ -41,10 +38,6 @@ int main(void)
 	int ret;
 	char tx_buf[MORPHEUS_FRAME_SIZE];
 
-	if (!device_is_ready(led.port)) {
-		return 0;
-	}
-
     if (usb_enable(NULL) != 0){
 		printk("Failed to enable USB");
 		return 0;
@@ -52,11 +45,6 @@ int main(void)
 	
 	if (!morpheus_protocol_init(uart))
 		return 0;
-
-	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
-	if (ret < 0) {
-		return 0;
-	}
 
 	morpheus_state_init();
 
@@ -119,7 +107,6 @@ int main(void)
 		}
 
 		k_free(params);
-		gpio_pin_toggle_dt(&led);
 
 	}
 }

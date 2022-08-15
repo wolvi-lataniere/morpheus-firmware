@@ -5,9 +5,13 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include "morpheus-states.h"
-
+#include <zephyr/usb/usb_device.h>
 
 #define MORPHEUS_USER_NODE DT_PATH(zephyr_user)
+
+#define LED0_NODE DT_ALIAS(led0)
+
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 static const struct gpio_dt_spec relay = GPIO_DT_SPEC_GET(MORPHEUS_USER_NODE, poweron_gpios); 
 static const struct gpio_dt_spec wakepin = GPIO_DT_SPEC_GET(MORPHEUS_USER_NODE, wakepin_gpios);
 
@@ -68,9 +72,9 @@ static const struct smf_state morpheus_states[] {
  */
 static void msms_poweron_entry(void* obj)
 {
-   gpio_pin_configure_dt(&wakepin, GPIO_INPUT);
-   gpio_pin_configure_dt(&relay, GPIO_OUTPUT_ACTIVE);
    gpio_pin_set_dt(&relay, 1);
+   gpio_pin_set_dt(&led, 1);
+//    usb_enable(NULL);
 }
 
 static void msms_poweron_run(void* obj)
@@ -125,6 +129,8 @@ static void msms_pre_sleep_pin_run(void* obj)
 static void msms_sleep_pin_entry(void* obj)
 {
     gpio_pin_set_dt(&relay, 0);
+    gpio_pin_set_dt(&led, 0);
+    // usb_disable();
 }
 
 static void msms_sleep_pin_run(void* obj)
@@ -157,6 +163,8 @@ static void msms_pre_sleep_time_run(void* obj)
 static void msms_sleep_time_entry(void* obj)
 {
     gpio_pin_set_dt(&relay, 0);
+    gpio_pin_set_dt(&led, 0);
+    // usb_disable();
     k_timer_start(&morpheus_timer, K_SECONDS(ms_obj.sleep_time), K_NO_WAIT);
 }
 
@@ -188,6 +196,13 @@ struct k_thread morpheus_thread_data;
 
 void morpheus_state_init()
 {
+    /* Configure GPIOs */
+   gpio_pin_configure_dt(&wakepin, GPIO_INPUT);
+   gpio_pin_configure_dt(&relay, GPIO_OUTPUT_ACTIVE);
+   gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+   gpio_pin_set_dt(&relay, 1); /// Relay is active by default
+   gpio_pin_set_dt(&led, 1); /// Relay is active by default
+ 
     /* Set initial state */
     smf_set_initial(SMF_CTX(&ms_obj), &morpheus_states[MSMS_POWERON]);
     k_thread_create(&morpheus_thread_data, morpheus_stack_area,
