@@ -130,7 +130,7 @@ void morpheus_state_thread_entry(void*, void*, void*) {
     }
 }
 
-K_THREAD_STACK_DEFINE(morpheus_stack_area, 256);
+K_THREAD_STACK_DEFINE(morpheus_stack_area, 1024);
 struct k_thread morpheus_thread_data;
 
 void morpheus_state_init()
